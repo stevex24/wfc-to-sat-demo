@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<body>
+<pre id="output"></pre>
+
+<script>
+// Grid size
+const N = 5;
+
+// Tiles
+const tiles = ["A", "B"];
+
+// Rule: A cannot touch A
+function isValid(grid, x, y, tile) {
+  // check left
+  if (x > 0 && grid[y][x-1] === "A" && tile === "A") return false;
+  // check up
+  if (y > 0 && grid[y-1][x] === "A" && tile === "A") return false;
+  return true;
+}
+
+// SAT-style solver (backtracking)
+function solve(grid, x = 0, y = 0) {
+  if (y === N) return true;
+
+  let nextX = (x + 1) % N;
+  let nextY = y + (x + 1 === N ? 1 : 0);
+
+  for (let t of tiles) {
+    if (isValid(grid, x, y, t)) {
+      grid[y][x] = t;
+
+      if (solve(grid, nextX, nextY)) return true;
+    }
+  }
+
+  grid[y][x] = null;
+  return false;
+}
+
+// Greedy generator (your method)
+function greedy() {
+  let grid = Array.from({length: N}, () => Array(N).fill(null));
+
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      let choice = Math.random() < 0.5 ? "A" : "B";
+
+      if (!isValid(grid, x, y, choice)) {
+        choice = "B"; // fallback
+      }
+
+      grid[y][x] = choice;
+    }
+  }
+
+  return grid;
+}
+
+// Pretty print
+function printGrid(grid) {
+  return grid.map(row => row.join(" ")).join("\n");
+}
+
+// Run demo
+let greedyGrid = greedy();
+
+let satGrid = Array.from({length: N}, () => Array(N).fill(null));
+solve(satGrid);
+
+document.getElementById("output").textContent =
+  "Greedy solution:\n\n" +
+  printGrid(greedyGrid) +
+  "\n\nSAT-style solution:\n\n" +
+  printGrid(satGrid);
+</script>
+
+</body>
+</html>
