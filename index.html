@@ -56,6 +56,55 @@ function greedy() {
 
   return grid;
 }
+function wfcSolve() {
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+
+  let domains = Array.from({length: N}, () =>
+    Array.from({length: N}, () => new Set(["A", "B"]))
+  );
+
+  function collapse(x, y, tile) {
+    domains[y][x] = new Set([tile]);
+    propagate([{x, y}]);
+  }
+
+  function propagate(queue) {
+    while (queue.length) {
+      const {x, y} = queue.shift();
+
+      if (!domains[y][x].has("A")) continue;
+
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || nx >= N || ny < 0 || ny >= N) continue;
+
+        if (domains[ny][nx].has("A")) {
+          domains[ny][nx].delete("A");
+          queue.push({x: nx, y: ny});
+        }
+      }
+    }
+  }
+
+  while (true) {
+    let best = null;
+
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        if (domains[y][x].size > 1) best = {x, y};
+      }
+    }
+
+    if (!best) break;
+
+    const tile = Math.random() < 0.5 ? "A" : "B";
+    collapse(best.x, best.y, tile);
+  }
+
+  return domains.map(row =>
+    row.map(cell => [...cell][0])
+  );
+}
 
 // Pretty print
 function printGrid(grid) {
@@ -71,6 +120,8 @@ solve(satGrid);
 document.getElementById("output").textContent =
   "Greedy solution:\n\n" +
   printGrid(greedyGrid) +
+  "\n\nSAT-style solution:\n\n" +
+  printGrid(wfcGrid) +
   "\n\nSAT-style solution:\n\n" +
   printGrid(satGrid);
 </script>
