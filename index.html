@@ -1,5 +1,10 @@
 <!DOCTYPE html>
 <html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WFC to SAT Demo</title>
+</head>
+
 <body>
 <pre id="output"></pre>
 
@@ -14,8 +19,10 @@ const tiles = ["A", "B"];
 function isValid(grid, x, y, tile) {
   // check left
   if (x > 0 && grid[y][x-1] === "A" && tile === "A") return false;
+
   // check up
   if (y > 0 && grid[y-1][x] === "A" && tile === "A") return false;
+
   return true;
 }
 
@@ -38,16 +45,17 @@ function solve(grid, x = 0, y = 0) {
   return false;
 }
 
-// Greedy generator (your method)
+// Greedy generator
 function greedy() {
   let grid = Array.from({length: N}, () => Array(N).fill(null));
 
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
+
       let choice = Math.random() < 0.5 ? "A" : "B";
 
       if (!isValid(grid, x, y, choice)) {
-        choice = "B"; // fallback
+        choice = "B";
       }
 
       grid[y][x] = choice;
@@ -56,9 +64,18 @@ function greedy() {
 
   return grid;
 }
-function wfcSolve() {
-  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
 
+// True WFC propagation/collapse demo
+function wfcSolve() {
+
+  const dirs = [
+    [1,0],
+    [-1,0],
+    [0,1],
+    [0,-1]
+  ];
+
+  // Each cell starts with domain {A,B}
   let domains = Array.from({length: N}, () =>
     Array.from({length: N}, () => new Set(["A", "B"]))
   );
@@ -69,17 +86,33 @@ function wfcSolve() {
   }
 
   function propagate(queue) {
+
     while (queue.length) {
+
       const {x, y} = queue.shift();
 
+      // Only propagate if this cell can be A
       if (!domains[y][x].has("A")) continue;
 
       for (const [dx, dy] of dirs) {
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || nx >= N || ny < 0 || ny >= N) continue;
 
-        if (domains[ny][nx].has("A")) {
+        const nx = x + dx;
+        const ny = y + dy;
+
+        if (nx < 0 || nx >= N || ny < 0 || ny >= N) {
+          continue;
+        }
+
+        // If current cell is definitely A,
+        // neighbors cannot be A
+        if (
+          domains[y][x].size === 1 &&
+          domains[y][x].has("A") &&
+          domains[ny][nx].has("A")
+        ) {
+
           domains[ny][nx].delete("A");
+
           queue.push({x: nx, y: ny});
         }
       }
@@ -87,20 +120,28 @@ function wfcSolve() {
   }
 
   while (true) {
+
     let best = null;
 
+    // Pick an unresolved cell
     for (let y = 0; y < N; y++) {
       for (let x = 0; x < N; x++) {
-        if (domains[y][x].size > 1) best = {x, y};
+
+        if (domains[y][x].size > 1) {
+          best = {x, y};
+        }
       }
     }
 
     if (!best) break;
 
+    // Collapse randomly
     const tile = Math.random() < 0.5 ? "A" : "B";
+
     collapse(best.x, best.y, tile);
   }
 
+  // Convert domains to final grid
   return domains.map(row =>
     row.map(cell => [...cell][0])
   );
@@ -111,19 +152,27 @@ function printGrid(grid) {
   return grid.map(row => row.join(" ")).join("\n");
 }
 
-// Run demo
+// Run demos
 let greedyGrid = greedy();
 
+let wfcGrid = wfcSolve();
+
 let satGrid = Array.from({length: N}, () => Array(N).fill(null));
+
 solve(satGrid);
 
+// Output
 document.getElementById("output").textContent =
+
   "Greedy solution:\n\n" +
   printGrid(greedyGrid) +
-  "\n\nSAT-style solution:\n\n" +
+
+  "\n\nWFC propagation/collapse solution:\n\n" +
   printGrid(wfcGrid) +
+
   "\n\nSAT-style solution:\n\n" +
   printGrid(satGrid);
+
 </script>
 
 </body>
