@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -147,6 +148,111 @@ function wfcSolve() {
   );
 }
 
+// Simple tiled WFC -> CNF encoder
+
+const spec = {
+  width: 5,
+  height: 5,
+  tiles: ["A", "B"],
+  allowed: {
+    right: {
+      A: ["B"],       // A cannot be right-next-to A
+      B: ["A", "B"]
+    },
+    down: {
+      A: ["B"],       // A cannot be down-next-to A
+      B: ["A", "B"]
+    }
+  }
+};
+
+function wfcToCnf(spec) {
+  const { width, height, tiles, allowed } = spec;
+
+  let nextVar = 1;
+  const varMap = {};
+  const nameMap = {};
+  const clauses = [];
+
+  function varFor(x, y, tile) {
+    const key = `${x},${y},${tile}`;
+    if (!varMap[key]) {
+      varMap[key] = nextVar;
+      nameMap[nextVar] = key;
+      nextVar++;
+    }
+    return varMap[key];
+  }
+
+  // Create all variables
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      for (const tile of tiles) {
+        varFor(x, y, tile);
+      }
+    }
+  }
+
+  // Exactly one tile per cell
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      // at least one
+      clauses.push(tiles.map(tile => varFor(x, y, tile)));
+
+      // at most one
+      for (let i = 0; i < tiles.length; i++) {
+        for (let j = i + 1; j < tiles.length; j++) {
+          clauses.push([
+            -varFor(x, y, tiles[i]),
+            -varFor(x, y, tiles[j])
+          ]);
+        }
+      }
+    }
+  }
+
+  // Adjacency constraints
+  function addAdjacencyClauses(direction, dx, dy) {
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const nx = x + dx;
+        const ny = y + dy;
+
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+
+        for (const t1 of tiles) {
+          for (const t2 of tiles) {
+            const ok = allowed[direction][t1].includes(t2);
+
+            if (!ok) {
+              clauses.push([
+                -varFor(x, y, t1),
+                -varFor(nx, ny, t2)
+              ]);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  addAdjacencyClauses("right", 1, 0);
+  addAdjacencyClauses("down", 0, 1);
+
+  const numVars = nextVar - 1;
+
+  const dimacs =
+    `p cnf ${numVars} ${clauses.length}\n` +
+    clauses.map(c => c.join(" ") + " 0").join("\n");
+
+  return { clauses, varMap, nameMap, dimacs };
+}
+
+const result = wfcToCnf(spec);
+
+console.log("Clauses:", result.clauses);
+console.log("DIMACS:\n" + result.dimacs);
+
 // Pretty print
 function printGrid(grid) {
   return grid.map(row => row.join(" ")).join("\n");
@@ -164,6 +270,10 @@ solve(satGrid);
 // Output
 document.getElementById("output").textContent =
 
+  "WFC / Wang Tile Demo\n\n" +
+
+  "Rule:\nA cannot touch A horizontally or vertically\n\n" +
+
   "Greedy solution:\n\n" +
   printGrid(greedyGrid) +
 
@@ -171,7 +281,14 @@ document.getElementById("output").textContent =
   printGrid(wfcGrid) +
 
   "\n\nSAT-style solution:\n\n" +
-  printGrid(satGrid);
+  printGrid(satGrid) +
+
+  "\n\nCNF Summary:\n" +
+  `Variables: ${Object.keys(result.nameMap).length}\n` +
+  `Clauses: ${result.clauses.length}\n\n` +
+
+  "DIMACS CNF:\n\n" +
+  result.dimacs;
 
 </script>
 
