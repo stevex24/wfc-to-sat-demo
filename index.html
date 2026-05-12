@@ -10,49 +10,57 @@
 <pre id="output"></pre>
 
 <script>
-// Grid size
-const N = 5;
+// ============================================================
+// 1. Problem Spec
+// ============================================================
 
-// Tiles
-const tiles = ["A", "B"];
+const spec = {
+  width: 5,
+  height: 5,
+  tiles: ["A", "B"],
+  allowed: {
+    right: {
+      A: ["B"],
+      B: ["A", "B"]
+    },
+    down: {
+      A: ["B"],
+      B: ["A", "B"]
+    }
+  }
+};
 
-// Rule: A cannot touch A
+const N = spec.width;
+const tiles = spec.tiles;
+
+// ============================================================
+// 2. Shared Helpers
+// ============================================================
+
+function printGrid(grid) {
+  return grid.map(row => row.join(" ")).join("\n");
+}
+
+function makeEmptyGrid(width, height) {
+  return Array.from({ length: height }, () => Array(width).fill(null));
+}
+
+// Rule: A cannot touch A, checked only left/up for generation
 function isValid(grid, x, y, tile) {
-  // check left
-  if (x > 0 && grid[y][x-1] === "A" && tile === "A") return false;
-
-  // check up
-  if (y > 0 && grid[y-1][x] === "A" && tile === "A") return false;
-
+  if (x > 0 && grid[y][x - 1] === "A" && tile === "A") return false;
+  if (y > 0 && grid[y - 1][x] === "A" && tile === "A") return false;
   return true;
 }
 
-// SAT-style solver (backtracking)
-function solve(grid, x = 0, y = 0) {
-  if (y === N) return true;
+// ============================================================
+// 3. Greedy Generator
+// ============================================================
 
-  let nextX = (x + 1) % N;
-  let nextY = y + (x + 1 === N ? 1 : 0);
-
-  for (let t of tiles) {
-    if (isValid(grid, x, y, t)) {
-      grid[y][x] = t;
-
-      if (solve(grid, nextX, nextY)) return true;
-    }
-  }
-
-  grid[y][x] = null;
-  return false;
-}
-
-// Greedy generator
 function greedy() {
-  let grid = Array.from({length: N}, () => Array(N).fill(null));
+  let grid = makeEmptyGrid(N, N);
 
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
-
       let choice = Math.random() < 0.5 ? "A" : "B";
 
       if (!isValid(grid, x, y, choice)) {
@@ -66,105 +74,96 @@ function greedy() {
   return grid;
 }
 
-// True WFC propagation/collapse demo
-function wfcSolve() {
+// ============================================================
+// 4. SAT-Style Backtracking Solver
+// ============================================================
 
+function solveBacktracking(grid, x = 0, y = 0) {
+  if (y === N) return true;
+
+  let nextX = (x + 1) % N;
+  let nextY = y + (x + 1 === N ? 1 : 0);
+
+  for (let t of tiles) {
+    if (isValid(grid, x, y, t)) {
+      grid[y][x] = t;
+
+      if (solveBacktracking(grid, nextX, nextY)) return true;
+    }
+  }
+
+  grid[y][x] = null;
+  return false;
+}
+
+// ============================================================
+// 5. WFC Propagation / Collapse Demo
+// ============================================================
+
+function wfcSolve() {
   const dirs = [
-    [1,0],
-    [-1,0],
-    [0,1],
-    [0,-1]
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1]
   ];
 
-  // Each cell starts with domain {A,B}
-  let domains = Array.from({length: N}, () =>
-    Array.from({length: N}, () => new Set(["A", "B"]))
+  let domains = Array.from({ length: N }, () =>
+    Array.from({ length: N }, () => new Set(["A", "B"]))
   );
 
   function collapse(x, y, tile) {
     domains[y][x] = new Set([tile]);
-    propagate([{x, y}]);
+    propagate([{ x, y }]);
   }
 
   function propagate(queue) {
-
     while (queue.length) {
+      const { x, y } = queue.shift();
 
-      const {x, y} = queue.shift();
-
-      // Only propagate if this cell can be A
       if (!domains[y][x].has("A")) continue;
 
       for (const [dx, dy] of dirs) {
-
         const nx = x + dx;
         const ny = y + dy;
 
-        if (nx < 0 || nx >= N || ny < 0 || ny >= N) {
-          continue;
-        }
+        if (nx < 0 || nx >= N || ny < 0 || ny >= N) continue;
 
-        // If current cell is definitely A,
-        // neighbors cannot be A
         if (
           domains[y][x].size === 1 &&
           domains[y][x].has("A") &&
           domains[ny][nx].has("A")
         ) {
-
           domains[ny][nx].delete("A");
-
-          queue.push({x: nx, y: ny});
+          queue.push({ x: nx, y: ny });
         }
       }
     }
   }
 
   while (true) {
-
     let best = null;
 
-    // Pick an unresolved cell
     for (let y = 0; y < N; y++) {
       for (let x = 0; x < N; x++) {
-
         if (domains[y][x].size > 1) {
-          best = {x, y};
+          best = { x, y };
         }
       }
     }
 
     if (!best) break;
 
-    // Collapse randomly
     const tile = Math.random() < 0.5 ? "A" : "B";
-
     collapse(best.x, best.y, tile);
   }
 
-  // Convert domains to final grid
-  return domains.map(row =>
-    row.map(cell => [...cell][0])
-  );
+  return domains.map(row => row.map(cell => [...cell][0]));
 }
 
-// Simple tiled WFC -> CNF encoder
-
-const spec = {
-  width: 5,
-  height: 5,
-  tiles: ["A", "B"],
-  allowed: {
-    right: {
-      A: ["B"],       // A cannot be right-next-to A
-      B: ["A", "B"]
-    },
-    down: {
-      A: ["B"],       // A cannot be down-next-to A
-      B: ["A", "B"]
-    }
-  }
-};
+// ============================================================
+// 6. WFC Spec -> CNF / DIMACS Compiler
+// ============================================================
 
 function wfcToCnf(spec) {
   const { width, height, tiles, allowed } = spec;
@@ -176,15 +175,17 @@ function wfcToCnf(spec) {
 
   function varFor(x, y, tile) {
     const key = `${x},${y},${tile}`;
+
     if (!varMap[key]) {
       varMap[key] = nextVar;
       nameMap[nextVar] = key;
       nextVar++;
     }
+
     return varMap[key];
   }
 
-  // Create all variables
+  // Create variables
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       for (const tile of tiles) {
@@ -196,10 +197,8 @@ function wfcToCnf(spec) {
   // Exactly one tile per cell
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      // at least one
       clauses.push(tiles.map(tile => varFor(x, y, tile)));
 
-      // at most one
       for (let i = 0; i < tiles.length; i++) {
         for (let j = i + 1; j < tiles.length; j++) {
           clauses.push([
@@ -211,7 +210,6 @@ function wfcToCnf(spec) {
     }
   }
 
-  // Adjacency constraints
   function addAdjacencyClauses(direction, dx, dy) {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
@@ -245,32 +243,84 @@ function wfcToCnf(spec) {
     `p cnf ${numVars} ${clauses.length}\n` +
     clauses.map(c => c.join(" ") + " 0").join("\n");
 
-  return { clauses, varMap, nameMap, dimacs };
+  return {
+    clauses,
+    varMap,
+    nameMap,
+    dimacs,
+    numVars
+  };
 }
 
-const result = wfcToCnf(spec);
+// ============================================================
+// 7. SAT Assignment Decoding
+// ============================================================
 
-console.log("Clauses:", result.clauses);
-console.log("DIMACS:\n" + result.dimacs);
+// This simulates a SAT solver assignment from an existing solved grid.
+// Later, this can be replaced with a real SAT solver result.
+function gridToSatAssignment(grid, cnf) {
+  const assignment = {};
 
-// Pretty print
-function printGrid(grid) {
-  return grid.map(row => row.join(" ")).join("\n");
+  for (let y = 0; y < grid.length; y++) {
+    for (let x = 0; x < grid[y].length; x++) {
+      for (const tile of tiles) {
+        const key = `${x},${y},${tile}`;
+        const v = cnf.varMap[key];
+
+        assignment[v] = grid[y][x] === tile;
+      }
+    }
+  }
+
+  return assignment;
 }
 
-// Run demos
-let greedyGrid = greedy();
+function decodeSatAssignment(assignment, cnf, spec) {
+  const grid = makeEmptyGrid(spec.width, spec.height);
 
-let wfcGrid = wfcSolve();
+  for (const [varId, isTrue] of Object.entries(assignment)) {
+    if (!isTrue) continue;
 
-let satGrid = Array.from({length: N}, () => Array(N).fill(null));
+    const name = cnf.nameMap[varId];
+    if (!name) continue;
 
-solve(satGrid);
+    const [xStr, yStr, tile] = name.split(",");
+    const x = Number(xStr);
+    const y = Number(yStr);
 
-// Output
+    grid[y][x] = tile;
+  }
+
+  return grid;
+}
+
+// ============================================================
+// 8. Run Demo
+// ============================================================
+
+const cnf = wfcToCnf(spec);
+
+const greedyGrid = greedy();
+
+const wfcGrid = wfcSolve();
+
+const backtrackingGrid = makeEmptyGrid(N, N);
+solveBacktracking(backtrackingGrid);
+
+// For now, simulate SAT output from the backtracking solution.
+const fakeSatAssignment = gridToSatAssignment(backtrackingGrid, cnf);
+const decodedSatGrid = decodeSatAssignment(fakeSatAssignment, cnf, spec);
+
+console.log("Clauses:", cnf.clauses);
+console.log("DIMACS:\n" + cnf.dimacs);
+console.log("Decoded SAT grid:", decodedSatGrid);
+
+// ============================================================
+// 9. Output
+// ============================================================
+
 document.getElementById("output").textContent =
-
-  "WFC / Wang Tile Demo\n\n" +
+  "WFC / Wang Tile / SAT Compiler Demo\n\n" +
 
   "Rule:\nA cannot touch A horizontally or vertically\n\n" +
 
@@ -280,16 +330,18 @@ document.getElementById("output").textContent =
   "\n\nWFC propagation/collapse solution:\n\n" +
   printGrid(wfcGrid) +
 
-  "\n\nSAT-style solution:\n\n" +
-  printGrid(satGrid) +
+  "\n\nSAT-style backtracking solution:\n\n" +
+  printGrid(backtrackingGrid) +
+
+  "\n\nDecoded SAT assignment grid:\n\n" +
+  printGrid(decodedSatGrid) +
 
   "\n\nCNF Summary:\n" +
-  `Variables: ${Object.keys(result.nameMap).length}\n` +
-  `Clauses: ${result.clauses.length}\n\n` +
+  `Variables: ${cnf.numVars}\n` +
+  `Clauses: ${cnf.clauses.length}\n\n` +
 
   "DIMACS CNF:\n\n" +
-  result.dimacs;
-
+  cnf.dimacs;
 </script>
 
 </body>
