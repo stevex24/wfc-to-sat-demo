@@ -4,10 +4,92 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WFC to SAT Demo</title>
+
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #111;
+  color: white;
+  padding: 20px;
+}
+
+.grid-container {
+  display: flex;
+  gap: 30px;
+  flex-wrap: wrap;
+}
+
+.panel {
+  background: #222;
+  padding: 15px;
+  border-radius: 10px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(5, 40px);
+  gap: 2px;
+}
+
+.cell {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+}
+
+.tile-A {
+  background: #4fc3f7;
+}
+
+.tile-B {
+  background: #ffb74d;
+}
+
+pre {
+  background: #222;
+  padding: 10px;
+  overflow-x: auto;
+}
+</style>
+
 </head>
 
 <body>
-<pre id="output"></pre>
+
+<h1>WFC → SAT Demo</h1>
+
+<div class="grid-container">
+  <div class="panel">
+    <h2>Greedy</h2>
+    <div id="greedyGrid"></div>
+  </div>
+
+  <div class="panel">
+    <h2>WFC Propagation</h2>
+    <div id="wfcGrid"></div>
+  </div>
+
+  <div class="panel">
+    <h2>SAT Backtracking</h2>
+    <div id="satGrid"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Decoded SAT Assignment</h2>
+    <div id="decodedGrid"></div>
+  </div>
+</div>
+
+<div class="panel summary-panel">
+  <h2>Rule</h2>
+  <p>A cannot touch A horizontally or vertically.</p>
+  <h2>CNF Summary</h2>
+  <pre id="summaryOutput"></pre>
+</div>
+
+<h2>DIMACS CNF</h2>
+<pre id="dimacsOutput"></pre>
+
 
 <script>
 // ============================================================
@@ -40,6 +122,26 @@ const tiles = spec.tiles;
 function printGrid(grid) {
   return grid.map(row => row.join(" ")).join("\n");
 }
+
+
+function renderGrid(grid, elementId) {
+  const container = document.getElementById(elementId);
+
+  container.className = "grid";
+  container.innerHTML = "";
+
+  for (let y = 0; y < grid.length; y++) {
+    for (let x = 0; x < grid[y].length; x++) {
+      const tile = grid[y][x];
+      const cell = document.createElement("div");
+
+      cell.className = `cell tile-${tile}`;
+
+      container.appendChild(cell);
+    }
+  }
+}
+
 
 function makeEmptyGrid(width, height) {
   return Array.from({ length: height }, () => Array(width).fill(null));
@@ -319,29 +421,18 @@ console.log("Decoded SAT grid:", decodedSatGrid);
 // 9. Output
 // ============================================================
 
-document.getElementById("output").textContent =
-  "WFC / Wang Tile / SAT Compiler Demo\n\n" +
 
-  "Rule:\nA cannot touch A horizontally or vertically\n\n" +
+renderGrid(greedyGrid, "greedyGrid");
+renderGrid(wfcGrid, "wfcGrid");
+renderGrid(backtrackingGrid, "satGrid");
+renderGrid(decodedSatGrid, "decodedGrid");
 
-  "Greedy solution:\n\n" +
-  printGrid(greedyGrid) +
+document.getElementById("summaryOutput").textContent =
+  `Variables: ${cnf.numVars}\nClauses: ${cnf.clauses.length}`;
 
-  "\n\nWFC propagation/collapse solution:\n\n" +
-  printGrid(wfcGrid) +
-
-  "\n\nSAT-style backtracking solution:\n\n" +
-  printGrid(backtrackingGrid) +
-
-  "\n\nDecoded SAT assignment grid:\n\n" +
-  printGrid(decodedSatGrid) +
-
-  "\n\nCNF Summary:\n" +
-  `Variables: ${cnf.numVars}\n` +
-  `Clauses: ${cnf.clauses.length}\n\n` +
-
-  "DIMACS CNF:\n\n" +
+document.getElementById("dimacsOutput").textContent =
   cnf.dimacs;
+
 </script>
 
 </body>
