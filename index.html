@@ -87,6 +87,8 @@ pre {
   <pre id="summaryOutput"></pre>
 </div>
 
+<button onclick="downloadDimacs()">Download DIMACS .cnf</button>
+
 <h2>DIMACS CNF</h2>
 <pre id="dimacsOutput"></pre>
 
@@ -416,6 +418,20 @@ const decodedSatGrid = decodeSatAssignment(fakeSatAssignment, cnf, spec);
 console.log("Clauses:", cnf.clauses);
 console.log("DIMACS:\n" + cnf.dimacs);
 console.log("Decoded SAT grid:", decodedSatGrid);
+
+
+function downloadDimacs() {
+  const blob = new Blob([cnf.dimacs], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "puzzle.cnf";
+  a.click();
+
+  URL.revokeObjectURL(url);
+}
+
 
 // ============================================================
 // 9. Output
