@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -38,11 +37,19 @@ body {
 }
 
 .tile-A {
-  background: #4fc3f7;
+  background: #ef5350;
 }
 
 .tile-B {
-  background: #ffb74d;
+  background: #42a5f5;
+}
+
+.tile-C {
+  background: #66bb6a;
+}
+
+.tile-D {
+  background: #ffee58;
 }
 
 pre {
@@ -56,7 +63,7 @@ pre {
 
 <body>
 
-<h1>WFC to SAT Demo</h1>
+<h1>WFC to SAT Demo: Wang Tile Version</h1>
 
 <div class="grid-container">
   <div class="panel">
@@ -82,7 +89,7 @@ pre {
 
 <div class="panel summary-panel">
   <h2>Rule</h2>
-  <p>A cannot touch A horizontally or vertically.</p>
+  <p>Adjacent Wang tile edges must match: east-to-west and south-to-north.</p>
   <h2>CNF Summary</h2>
   <pre id="summaryOutput"></pre>
 </div>
@@ -92,30 +99,75 @@ pre {
 <h2>DIMACS CNF</h2>
 <pre id="dimacsOutput"></pre>
 
-
 <script>
 // ============================================================
-// 1. Problem Spec
+// 1. Problem Spec: Wang Tiles
 // ============================================================
 
 const spec = {
   width: 5,
   height: 5,
-  tiles: ["A", "B"],
-  allowed: {
-    right: {
-      A: ["B"],
-      B: ["A", "B"]
+  tiles: [
+    {
+      name: "A",
+      north: "red",
+      east: "blue",
+      south: "blue",
+      west: "red"
     },
-    down: {
-      A: ["B"],
-      B: ["A", "B"]
+    {
+      name: "B",
+      north: "blue",
+      east: "red",
+      south: "red",
+      west: "blue"
+    },
+    {
+      name: "C",
+      north: "red",
+      east: "red",
+      south: "blue",
+      west: "blue"
+    },
+    {
+      name: "D",
+      north: "blue",
+      east: "blue",
+      south: "red",
+      west: "red"
     }
-  }
+  ]
 };
 
+function buildAllowed(spec) {
+  const allowed = {
+    right: {},
+    down: {}
+  };
+
+  for (const t1 of spec.tiles) {
+    allowed.right[t1.name] = [];
+    allowed.down[t1.name] = [];
+
+    for (const t2 of spec.tiles) {
+      if (t1.east === t2.west) {
+        allowed.right[t1.name].push(t2.name);
+      }
+
+      if (t1.south === t2.north) {
+        allowed.down[t1.name].push(t2.name);
+      }
+    }
+  }
+
+  return allowed;
+}
+
+spec.allowed = buildAllowed(spec);
+
 const N = spec.width;
-const tiles = spec.tiles;
+const tileObjects = spec.tiles;
+const tiles = tileObjects.map(t => t.name);
 
 // ============================================================
 // 2. Shared Helpers
@@ -124,7 +176,6 @@ const tiles = spec.tiles;
 function printGrid(grid) {
   return grid.map(row => row.join(" ")).join("\n");
 }
-
 
 function renderGrid(grid, elementId) {
   const container = document.getElementById(elementId);
@@ -138,21 +189,30 @@ function renderGrid(grid, elementId) {
       const cell = document.createElement("div");
 
       cell.className = `cell tile-${tile}`;
+      cell.title = tile;
 
       container.appendChild(cell);
     }
   }
 }
 
-
 function makeEmptyGrid(width, height) {
   return Array.from({ length: height }, () => Array(width).fill(null));
 }
 
-// Rule: A cannot touch A, checked only left/up for generation
+function allowedNeighbor(direction, t1, t2) {
+  return spec.allowed[direction][t1].includes(t2);
+}
+
 function isValid(grid, x, y, tile) {
-  if (x > 0 && grid[y][x - 1] === "A" && tile === "A") return false;
-  if (y > 0 && grid[y - 1][x] === "A" && tile === "A") return false;
+  if (x > 0 && grid[y][x - 1] !== null) {
+    if (!allowedNeighbor("right", grid[y][x - 1], tile)) return false;
+  }
+
+  if (y > 0 && grid[y - 1][x] !== null) {
+    if (!allowedNeighbor("down", grid[y - 1][x], tile)) return false;
+  }
+
   return true;
 }
 
@@ -165,10 +225,11 @@ function greedy() {
 
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
-      let choice = Math.random() < 0.5 ? "A" : "B";
+      const shuffled = [...tiles].sort(() => Math.random() - 0.5);
+      let choice = shuffled.find(tile => isValid(grid, x, y, tile));
 
-      if (!isValid(grid, x, y, choice)) {
-        choice = "B";
+      if (!choice) {
+        choice = tiles[0];
       }
 
       grid[y][x] = choice;
@@ -205,40 +266,49 @@ function solveBacktracking(grid, x = 0, y = 0) {
 // ============================================================
 
 function wfcSolve() {
-  const dirs = [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1]
-  ];
-
   let domains = Array.from({ length: N }, () =>
-    Array.from({ length: N }, () => new Set(["A", "B"]))
+    Array.from({ length: N }, () => new Set(tiles))
   );
 
-  function collapse(x, y, tile) {
-    domains[y][x] = new Set([tile]);
-    propagate([{ x, y }]);
+  function compatible(direction, sourceTile, neighborTile) {
+    return spec.allowed[direction][sourceTile].includes(neighborTile);
+  }
+
+  function reduceNeighbor(x, y, nx, ny, direction) {
+    let changed = false;
+
+    for (const neighborTile of [...domains[ny][nx]]) {
+      let supported = false;
+
+      for (const sourceTile of domains[y][x]) {
+        if (compatible(direction, sourceTile, neighborTile)) {
+          supported = true;
+          break;
+        }
+      }
+
+      if (!supported) {
+        domains[ny][nx].delete(neighborTile);
+        changed = true;
+      }
+    }
+
+    return changed;
   }
 
   function propagate(queue) {
     while (queue.length) {
       const { x, y } = queue.shift();
 
-      if (!domains[y][x].has("A")) continue;
+      const neighbors = [
+        { nx: x + 1, ny: y, direction: "right" },
+        { nx: x, ny: y + 1, direction: "down" }
+      ];
 
-      for (const [dx, dy] of dirs) {
-        const nx = x + dx;
-        const ny = y + dy;
-
+      for (const { nx, ny, direction } of neighbors) {
         if (nx < 0 || nx >= N || ny < 0 || ny >= N) continue;
 
-        if (
-          domains[y][x].size === 1 &&
-          domains[y][x].has("A") &&
-          domains[ny][nx].has("A")
-        ) {
-          domains[ny][nx].delete("A");
+        if (reduceNeighbor(x, y, nx, ny, direction)) {
           queue.push({ x: nx, y: ny });
         }
       }
@@ -252,17 +322,22 @@ function wfcSolve() {
       for (let x = 0; x < N; x++) {
         if (domains[y][x].size > 1) {
           best = { x, y };
+          break;
         }
       }
+      if (best) break;
     }
 
     if (!best) break;
 
-    const tile = Math.random() < 0.5 ? "A" : "B";
-    collapse(best.x, best.y, tile);
+    const options = [...domains[best.y][best.x]];
+    const tile = options[Math.floor(Math.random() * options.length)];
+
+    domains[best.y][best.x] = new Set([tile]);
+    propagate([{ x: best.x, y: best.y }]);
   }
 
-  return domains.map(row => row.map(cell => [...cell][0]));
+  return domains.map(row => row.map(cell => [...cell][0] || "?"));
 }
 
 // ============================================================
@@ -270,7 +345,8 @@ function wfcSolve() {
 // ============================================================
 
 function wfcToCnf(spec) {
-  const { width, height, tiles, allowed } = spec;
+  const { width, height, allowed } = spec;
+  const tiles = spec.tiles.map(t => t.name);
 
   let nextVar = 1;
   const varMap = {};
@@ -289,7 +365,6 @@ function wfcToCnf(spec) {
     return varMap[key];
   }
 
-  // Create variables
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       for (const tile of tiles) {
@@ -298,7 +373,6 @@ function wfcToCnf(spec) {
     }
   }
 
-  // Exactly one tile per cell
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       clauses.push(tiles.map(tile => varFor(x, y, tile)));
@@ -360,8 +434,6 @@ function wfcToCnf(spec) {
 // 7. SAT Assignment Decoding
 // ============================================================
 
-// This simulates a SAT solver assignment from an existing solved grid.
-// Later, this can be replaced with a real SAT solver result.
 function gridToSatAssignment(grid, cnf) {
   const assignment = {};
 
@@ -398,6 +470,18 @@ function decodeSatAssignment(assignment, cnf, spec) {
   return grid;
 }
 
+function downloadDimacs() {
+  const blob = new Blob([cnf.dimacs], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "wang-puzzle.cnf";
+  a.click();
+
+  URL.revokeObjectURL(url);
+}
+
 // ============================================================
 // 8. Run Demo
 // ============================================================
@@ -411,32 +495,17 @@ const wfcGrid = wfcSolve();
 const backtrackingGrid = makeEmptyGrid(N, N);
 solveBacktracking(backtrackingGrid);
 
-// For now, simulate SAT output from the backtracking solution.
 const fakeSatAssignment = gridToSatAssignment(backtrackingGrid, cnf);
 const decodedSatGrid = decodeSatAssignment(fakeSatAssignment, cnf, spec);
 
+console.log("Allowed adjacency:", spec.allowed);
 console.log("Clauses:", cnf.clauses);
 console.log("DIMACS:\n" + cnf.dimacs);
 console.log("Decoded SAT grid:", decodedSatGrid);
 
-
-function downloadDimacs() {
-  const blob = new Blob([cnf.dimacs], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "puzzle.cnf";
-  a.click();
-
-  URL.revokeObjectURL(url);
-}
-
-
 // ============================================================
 // 9. Output
 // ============================================================
-
 
 renderGrid(greedyGrid, "greedyGrid");
 renderGrid(wfcGrid, "wfcGrid");
@@ -444,11 +513,12 @@ renderGrid(backtrackingGrid, "satGrid");
 renderGrid(decodedSatGrid, "decodedGrid");
 
 document.getElementById("summaryOutput").textContent =
-  `Variables: ${cnf.numVars}\nClauses: ${cnf.clauses.length}`;
+  `Tiles: ${tiles.join(", ")}\n` +
+  `Variables: ${cnf.numVars}\n` +
+  `Clauses: ${cnf.clauses.length}`;
 
 document.getElementById("dimacsOutput").textContent =
   cnf.dimacs;
-
 </script>
 
 </body>
