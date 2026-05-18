@@ -37,12 +37,20 @@ body {
   border-radius: 4px;
 }
 
-.tile-A {
+.tile-blank {
   background: #4fc3f7;
 }
 
-.tile-B {
+.tile-up {
   background: #ffb74d;
+}
+
+.tile-right {
+  background: #66bb6a;
+}
+
+.tile-down {
+  background: #ef5350;
 }
 
 pre {
@@ -56,7 +64,7 @@ pre {
 
 <body>
 
-<h1>WFC to SAT Demo</h1>
+<h1>WFC to SAT Demo: Coding Train Adapter</h1>
 
 <div class="grid-container">
   <div class="panel">
@@ -82,7 +90,7 @@ pre {
 
 <div class="panel summary-panel">
   <h2>Rule</h2>
-  <p>A cannot touch A horizontally or vertically.</p>
+  <p>Adjacent Coding Train-style tile edges must match.</p>
   <h2>CNF Summary</h2>
   <pre id="summaryOutput"></pre>
 </div>
@@ -95,27 +103,73 @@ pre {
 
 <script>
 // ============================================================
-// 1. Problem Spec
+// 1. Coding Train Style Tile Input
 // ============================================================
 
-const spec = {
-  width: 5,
-  height: 5,
-  tiles: ["A", "B"],
-  allowed: {
-    right: {
-      A: ["B"],
-      B: ["A", "B"]
-    },
-    down: {
-      A: ["B"],
-      B: ["A", "B"]
+const codingTrainTiles = [
+  {
+    name: "blank",
+    edges: ["AAA", "AAA", "AAA", "AAA"]
+  },
+  {
+    name: "up",
+    edges: ["ABA", "AAA", "AAA", "AAA"]
+  },
+  {
+    name: "right",
+    edges: ["AAA", "ABA", "AAA", "AAA"]
+  },
+  {
+    name: "down",
+    edges: ["AAA", "AAA", "ABA", "AAA"]
+  }
+];
+
+function codingTrainTilesToSpec(codingTrainTiles, width, height) {
+  return {
+    width,
+    height,
+    tiles: codingTrainTiles.map(tile => ({
+      name: tile.name,
+      north: tile.edges[0],
+      east: tile.edges[1],
+      south: tile.edges[2],
+      west: tile.edges[3]
+    }))
+  };
+}
+
+const spec = codingTrainTilesToSpec(codingTrainTiles, 5, 5);
+
+function buildAllowed(spec) {
+  const allowed = {
+    right: {},
+    down: {}
+  };
+
+  for (const t1 of spec.tiles) {
+    allowed.right[t1.name] = [];
+    allowed.down[t1.name] = [];
+
+    for (const t2 of spec.tiles) {
+      if (t1.east === t2.west) {
+        allowed.right[t1.name].push(t2.name);
+      }
+
+      if (t1.south === t2.north) {
+        allowed.down[t1.name].push(t2.name);
+      }
     }
   }
-};
+
+  return allowed;
+}
+
+spec.allowed = buildAllowed(spec);
 
 const N = spec.width;
-const tiles = spec.tiles;
+const tileObjects = spec.tiles;
+const tiles = tileObjects.map(t => t.name);
 
 // ============================================================
 // 2. Shared Helpers
@@ -149,10 +203,33 @@ function makeEmptyGrid(width, height) {
   return Array.from({ length: height }, () => Array(width).fill(null));
 }
 
-// Rule: A cannot touch A, checked only left/up for generation
+function tileName(tile) {
+  return typeof tile === "string" ? tile : tile.name;
+}
+
+function allowedNeighbor(direction, t1, t2) {
+  const name1 = tileName(t1);
+  const name2 = tileName(t2);
+
+  const allowedList = spec.allowed[direction][name1];
+
+  if (!allowedList) {
+    console.warn("No allowed list for:", direction, name1, spec.allowed);
+    return false;
+  }
+
+  return allowedList.includes(name2);
+}
+
 function isValid(grid, x, y, tile) {
-  if (x > 0 && grid[y][x - 1] === "A" && tile === "A") return false;
-  if (y > 0 && grid[y - 1][x] === "A" && tile === "A") return false;
+  if (x > 0 && grid[y][x - 1] !== null) {
+    if (!allowedNeighbor("right", grid[y][x - 1], tile)) return false;
+  }
+
+  if (y > 0 && grid[y - 1][x] !== null) {
+    if (!allowedNeighbor("down", grid[y - 1][x], tile)) return false;
+  }
+
   return true;
 }
 
@@ -213,7 +290,7 @@ function wfcSolve() {
   ];
 
   let domains = Array.from({ length: N }, () =>
-    Array.from({ length: N }, () => new Set(["A", "B"]))
+    Array.from({ length: N }, () => new Set(tiles))
   );
 
   function collapse(x, y, tile) {
@@ -258,7 +335,7 @@ function wfcSolve() {
 
     if (!best) break;
 
-    const tile = Math.random() < 0.5 ? "A" : "B";
+    const tile = [...domains[best.y][best.x]][Math.floor(Math.random() * domains[best.y][best.x].size)];
     collapse(best.x, best.y, tile);
   }
 
@@ -270,7 +347,8 @@ function wfcSolve() {
 // ============================================================
 
 function wfcToCnf(spec) {
-  const { width, height, tiles, allowed } = spec;
+  const { width, height, allowed } = spec;
+  const tiles = spec.tiles.map(t => t.name);
 
   let nextVar = 1;
   const varMap = {};
@@ -444,7 +522,9 @@ renderGrid(backtrackingGrid, "satGrid");
 renderGrid(decodedSatGrid, "decodedGrid");
 
 document.getElementById("summaryOutput").textContent =
-  `Variables: ${cnf.numVars}\nClauses: ${cnf.clauses.length}`;
+  `Tiles: ${tiles.join(", ")}\n` +
+  `Variables: ${cnf.numVars}\n` +
+  `Clauses: ${cnf.clauses.length}`;
 
 document.getElementById("dimacsOutput").textContent =
   cnf.dimacs;
