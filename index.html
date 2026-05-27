@@ -58,6 +58,22 @@ pre {
   padding: 10px;
   overflow-x: auto;
 }
+
+.text-grid {
+  display: grid;
+  gap: 2px;
+}
+
+.text-cell {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  background: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+}
 </style>
 
 </head>
@@ -85,6 +101,16 @@ pre {
   <div class="panel">
     <h2>Decoded SAT Assignment</h2>
     <div id="decodedGrid"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Overlapping Pattern IDs</h2>
+    <div id="overlapPatternGrid"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Reconstructed Overlap Output</h2>
+    <div id="overlapTextGrid"></div>
   </div>
 </div>
 
@@ -178,6 +204,375 @@ const tiles = tileObjects.map(t => t.name);
 function printGrid(grid) {
   return grid.map(row => row.join(" ")).join("\n");
 }
+
+// ============================================================
+// 2A. Overlapping WFC: Text Grid Pattern Extraction
+// ============================================================
+
+const sampleTextGrid = [
+  "ABABA",
+  "BABAB",
+  "ABABA",
+  "BABAB",
+  "ABABA"
+];
+
+function extractOverlappingPatterns(textGrid, patternSize) {
+  const height = textGrid.length;
+  const width = textGrid[0].length;
+
+  const patternMap = new Map();
+
+  for (let y = 0; y <= height - patternSize; y++) {
+    for (let x = 0; x <= width - patternSize; x++) {
+      const rows = [];
+
+      for (let dy = 0; dy < patternSize; dy++) {
+        rows.push(textGrid[y + dy].slice(x, x + patternSize));
+      }
+
+      const key = rows.join("/");
+
+      if (!patternMap.has(key)) {
+        patternMap.set(key, {
+          id: patternMap.size,
+          rows,
+          frequency: 0
+        });
+      }
+
+      patternMap.get(key).frequency++;
+    }
+  }
+
+  return Array.from(patternMap.values());
+}
+
+function printPatterns(patterns) {
+  return patterns.map(pattern =>
+    `Pattern ${pattern.id}  frequency=${pattern.frequency}\n` +
+    pattern.rows.join("\n")
+  ).join("\n\n");
+}
+
+const overlappingPatterns = extractOverlappingPatterns(sampleTextGrid, 2);
+
+function patternsOverlapRight(leftPattern, rightPattern) {
+  const size = leftPattern.rows.length;
+
+  for (let y = 0; y < size; y++) {
+    if (leftPattern.rows[y].slice(1) !== rightPattern.rows[y].slice(0, size - 1)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function patternsOverlapDown(topPattern, bottomPattern) {
+  const size = topPattern.rows.length;
+
+  for (let y = 1; y < size; y++) {
+    if (topPattern.rows[y] !== bottomPattern.rows[y - 1]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function buildOverlapCompatibility(patterns) {
+  const allowed = {
+    right: {},
+    down: {}
+  };
+
+  for (const p1 of patterns) {
+    allowed.right[p1.id] = [];
+    allowed.down[p1.id] = [];
+
+    for (const p2 of patterns) {
+      if (patternsOverlapRight(p1, p2)) {
+        allowed.right[p1.id].push(p2.id);
+      }
+
+      if (patternsOverlapDown(p1, p2)) {
+        allowed.down[p1.id].push(p2.id);
+      }
+    }
+  }
+
+  return allowed;
+}
+
+function printOverlapCompatibility(allowed) {
+  const lines = [];
+
+  lines.push("Right compatibility:");
+  for (const [patternId, allowedIds] of Object.entries(allowed.right)) {
+    lines.push(`Pattern ${patternId} -> ${allowedIds.join(", ")}`);
+  }
+
+  lines.push("");
+  lines.push("Down compatibility:");
+  for (const [patternId, allowedIds] of Object.entries(allowed.down)) {
+    lines.push(`Pattern ${patternId} -> ${allowedIds.join(", ")}`);
+  }
+
+  return lines.join("\n");
+}
+
+const overlapAllowed = buildOverlapCompatibility(overlappingPatterns);
+
+function overlappingPatternsToCnf(patterns, allowed, width, height) {
+  let nextVar = 1;
+  const varMap = {};
+  const nameMap = {};
+  const clauses = [];
+
+  function varFor(x, y, patternId) {
+    const key = `${x},${y},P${patternId}`;
+
+    if (!varMap[key]) {
+      varMap[key] = nextVar;
+      nameMap[nextVar] = key;
+      nextVar++;
+    }
+
+    return varMap[key];
+  }
+
+  // Create variables: pattern p is placed at output cell (x,y)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      for (const pattern of patterns) {
+        varFor(x, y, pattern.id);
+      }
+    }
+  }
+
+  // Exactly one pattern per output cell
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      clauses.push(patterns.map(pattern => varFor(x, y, pattern.id)));
+
+      for (let i = 0; i < patterns.length; i++) {
+        for (let j = i + 1; j < patterns.length; j++) {
+          clauses.push([
+            -varFor(x, y, patterns[i].id),
+            -varFor(x, y, patterns[j].id)
+          ]);
+        }
+      }
+    }
+  }
+
+  function addOverlapClauses(direction, dx, dy) {
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const nx = x + dx;
+        const ny = y + dy;
+
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+
+        for (const p1 of patterns) {
+          for (const p2 of patterns) {
+            const ok = allowed[direction][p1.id].includes(p2.id);
+
+            if (!ok) {
+              clauses.push([
+                -varFor(x, y, p1.id),
+                -varFor(nx, ny, p2.id)
+              ]);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  addOverlapClauses("right", 1, 0);
+  addOverlapClauses("down", 0, 1);
+
+  const numVars = nextVar - 1;
+
+  const dimacs =
+    `p cnf ${numVars} ${clauses.length}\n` +
+    clauses.map(c => c.join(" ") + " 0").join("\n");
+
+  return {
+    clauses,
+    varMap,
+    nameMap,
+    dimacs,
+    numVars
+  };
+}
+
+const overlapCnf = overlappingPatternsToCnf(
+  overlappingPatterns,
+  overlapAllowed,
+  4,
+  4
+);
+
+function solveOverlapBacktracking(patterns, allowed, width, height) {
+  const grid = Array.from({ length: height }, () => Array(width).fill(null));
+
+  function canPlace(x, y, patternId) {
+    if (x > 0 && grid[y][x - 1] !== null) {
+      if (!allowed.right[grid[y][x - 1]].includes(patternId)) return false;
+    }
+
+    if (y > 0 && grid[y - 1][x] !== null) {
+      if (!allowed.down[grid[y - 1][x]].includes(patternId)) return false;
+    }
+
+    return true;
+  }
+
+  function search(x = 0, y = 0) {
+    if (y === height) return true;
+
+    const nextX = (x + 1) % width;
+    const nextY = y + (x + 1 === width ? 1 : 0);
+
+    for (const pattern of patterns) {
+      if (canPlace(x, y, pattern.id)) {
+        grid[y][x] = pattern.id;
+
+        if (search(nextX, nextY)) return true;
+
+        grid[y][x] = null;
+      }
+    }
+
+    return false;
+  }
+
+  if (!search()) {
+    throw new Error("No overlapping-pattern solution found.");
+  }
+
+  return grid;
+}
+
+function gridToOverlapSatAssignment(patternGrid, cnf, patterns) {
+  const assignment = {};
+
+  for (let y = 0; y < patternGrid.length; y++) {
+    for (let x = 0; x < patternGrid[y].length; x++) {
+      for (const pattern of patterns) {
+        const key = `${x},${y},P${pattern.id}`;
+        const v = cnf.varMap[key];
+
+        assignment[v] = patternGrid[y][x] === pattern.id;
+      }
+    }
+  }
+
+  return assignment;
+}
+
+function decodeOverlapSatAssignment(assignment, cnf, width, height) {
+  const grid = Array.from({ length: height }, () => Array(width).fill(null));
+
+  for (const [varId, isTrue] of Object.entries(assignment)) {
+    if (!isTrue) continue;
+
+    const name = cnf.nameMap[varId];
+    if (!name) continue;
+
+    const [xStr, yStr, patternName] = name.split(",");
+    const x = Number(xStr);
+    const y = Number(yStr);
+    const patternId = Number(patternName.slice(1));
+
+    grid[y][x] = patternId;
+  }
+
+  return grid;
+}
+
+function reconstructTextGridFromPatternGrid(patternGrid, patterns) {
+  const patternById = new Map(patterns.map(pattern => [pattern.id, pattern]));
+  const patternSize = patterns[0].rows.length;
+  const outputHeight = patternGrid.length + patternSize - 1;
+  const outputWidth = patternGrid[0].length + patternSize - 1;
+
+  const output = Array.from({ length: outputHeight }, () =>
+    Array(outputWidth).fill("?")
+  );
+
+  for (let y = 0; y < patternGrid.length; y++) {
+    for (let x = 0; x < patternGrid[y].length; x++) {
+      const pattern = patternById.get(patternGrid[y][x]);
+
+      for (let dy = 0; dy < patternSize; dy++) {
+        for (let dx = 0; dx < patternSize; dx++) {
+          output[y + dy][x + dx] = pattern.rows[dy][dx];
+        }
+      }
+    }
+  }
+
+  return output.map(row => row.join(""));
+}
+
+function renderTextGrid(textGrid, elementId) {
+  const container = document.getElementById(elementId);
+  container.className = "text-grid";
+  container.style.gridTemplateColumns = `repeat(${textGrid[0].length}, 40px)`;
+  container.innerHTML = "";
+
+  for (const row of textGrid) {
+    for (const ch of row) {
+      const cell = document.createElement("div");
+      cell.className = "text-cell";
+      cell.textContent = ch;
+      container.appendChild(cell);
+    }
+  }
+}
+
+const solvedOverlapPatternGrid = solveOverlapBacktracking(
+  overlappingPatterns,
+  overlapAllowed,
+  4,
+  4
+);
+
+const fakeOverlapSatAssignment = gridToOverlapSatAssignment(
+  solvedOverlapPatternGrid,
+  overlapCnf,
+  overlappingPatterns
+);
+
+const decodedOverlapPatternGrid = decodeOverlapSatAssignment(
+  fakeOverlapSatAssignment,
+  overlapCnf,
+  4,
+  4
+);
+
+const reconstructedOverlapTextGrid = reconstructTextGridFromPatternGrid(
+  decodedOverlapPatternGrid,
+  overlappingPatterns
+);
+
+console.log("Sample text grid:");
+console.log(sampleTextGrid.join("\n"));
+
+console.log("Overlapping patterns:");
+console.log(printPatterns(overlappingPatterns));
+
+console.log("Overlap compatibility:");
+console.log(printOverlapCompatibility(overlapAllowed));
+
+console.log("Overlapping pattern CNF:");
+console.log(`Variables: ${overlapCnf.numVars}`);
+console.log(`Clauses: ${overlapCnf.clauses.length}`);
+console.log(overlapCnf.dimacs);
 
 
 function renderGrid(grid, elementId) {
@@ -520,6 +915,19 @@ renderGrid(greedyGrid, "greedyGrid");
 renderGrid(wfcGrid, "wfcGrid");
 renderGrid(backtrackingGrid, "satGrid");
 renderGrid(decodedSatGrid, "decodedGrid");
+
+renderTextGrid(
+  decodedOverlapPatternGrid.map(row => row.map(id => String(id))),
+  "overlapPatternGrid"
+);
+
+renderTextGrid(reconstructedOverlapTextGrid, "overlapTextGrid");
+
+console.log("Solved overlapping pattern grid:");
+console.log(printGrid(decodedOverlapPatternGrid));
+
+console.log("Reconstructed overlapping text grid:");
+console.log(reconstructedOverlapTextGrid.join("\n"));
 
 document.getElementById("summaryOutput").textContent =
   `Tiles: ${tiles.join(", ")}\n` +
