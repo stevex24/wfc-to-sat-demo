@@ -217,6 +217,36 @@ const sampleTextGrid = [
   "ABABA"
 ];
 
+
+function patternKey(pattern) {
+  const rows = pattern.rows || pattern;
+  return rows.map(row => Array.isArray(row) ? row.join("") : String(row)).join("/");
+}
+
+function countPatternFrequencies(patterns) {
+  const counts = new Map();
+
+  for (const p of patterns) {
+    const key = patternKey(p);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  return counts;
+}
+
+function weightedRandomChoice(items, weightFn) {
+  const total = items.reduce((sum, item) => sum + weightFn(item), 0);
+  let r = Math.random() * total;
+
+  for (const item of items) {
+    r -= weightFn(item);
+    if (r <= 0) return item;
+  }
+
+  return items[items.length - 1];
+}
+
+
 function extractOverlappingPatterns(textGrid, patternSize) {
   const height = textGrid.length;
   const width = textGrid[0].length;
@@ -256,6 +286,14 @@ function printPatterns(patterns) {
 }
 
 const overlappingPatterns = extractOverlappingPatterns(sampleTextGrid, 2);
+const overlapPatternFrequencies = countPatternFrequencies(overlappingPatterns);
+const overlapPatternWeightsById = new Map(
+  overlappingPatterns.map(pattern => [
+    pattern.id,
+    pattern.frequency || overlapPatternFrequencies.get(patternKey(pattern)) || 1
+  ])
+);
+console.log("Overlapping pattern frequencies:", overlapPatternFrequencies);
 
 function patternsOverlapRight(leftPattern, rightPattern) {
   const size = leftPattern.rows.length;
@@ -730,7 +768,10 @@ function wfcSolve() {
 
     if (!best) break;
 
-    const tile = [...domains[best.y][best.x]][Math.floor(Math.random() * domains[best.y][best.x].size)];
+    const tile = weightedRandomChoice(
+      [...domains[best.y][best.x]],
+      id => overlapPatternWeightsById.get(id) || 1
+    );
     collapse(best.x, best.y, tile);
   }
 
