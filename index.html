@@ -757,16 +757,27 @@ function wfcSolve() {
 
   while (true) {
     let best = null;
+    let bestEntropy = Infinity;
 
     for (let y = 0; y < N; y++) {
       for (let x = 0; x < N; x++) {
-        if (domains[y][x].size > 1) {
+        const entropy = domains[y][x].size;
+
+        if (entropy > 1 && entropy < bestEntropy) {
           best = { x, y };
+          bestEntropy = entropy;
         }
       }
     }
 
     if (!best) break;
+
+    console.log("Lowest-entropy choice:", {
+      x: best.x,
+      y: best.y,
+      entropy: bestEntropy,
+      domain: [...domains[best.y][best.x]]
+    });
 
     const tile = weightedRandomChoice(
       [...domains[best.y][best.x]],
