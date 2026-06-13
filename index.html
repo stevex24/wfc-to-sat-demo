@@ -495,6 +495,52 @@ function solveOverlapBacktracking(patterns, allowed, width, height) {
   return grid;
 }
 
+function runOverlapScalingExperiment(sizes) {
+  console.log("=== Overlap scaling experiment ===");
+  console.log("size, vars, clauses, encodeMs, backtrackingMs, success");
+
+  for (const size of sizes) {
+    let cnf = null;
+    let encodeMs = null;
+    let backtrackingMs = null;
+    let success = true;
+
+    try {
+      const encodeStart = performance.now();
+      cnf = overlappingPatternsToCnf(
+        overlappingPatterns,
+        overlapAllowed,
+        size,
+        size
+      );
+      encodeMs = performance.now() - encodeStart;
+
+      const backtrackingStart = performance.now();
+      solveOverlapBacktracking(
+        overlappingPatterns,
+        overlapAllowed,
+        size,
+        size
+      );
+      backtrackingMs = performance.now() - backtrackingStart;
+    } catch (err) {
+      success = false;
+      console.warn("Overlap scaling failed at size", size, err);
+    }
+
+    console.log({
+      size: `${size}x${size}`,
+      vars: cnf ? cnf.numVars : null,
+      clauses: cnf ? cnf.clauses.length : null,
+      encodeMs: encodeMs === null ? null : Number(encodeMs.toFixed(3)),
+      backtrackingMs: backtrackingMs === null ? null : Number(backtrackingMs.toFixed(3)),
+      success
+    });
+  }
+}
+
+runOverlapScalingExperiment([4, 8, 12, 16, 20]);
+
 function gridToOverlapSatAssignment(patternGrid, cnf, patterns) {
   const assignment = {};
 
