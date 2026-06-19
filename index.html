@@ -34,6 +34,16 @@ body {
   width: 40px;
   height: 40px;
   border-radius: 4px;
+  box-sizing: border-box;
+  border-style: solid;
+  border-width: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  font-size: 14px;
+  background: #333;
 }
 
 .tile-A {
@@ -64,6 +74,12 @@ pre {
 <body>
 
 <h1>WFC to SAT Demo: Wang Tile Version</h1>
+
+<div class="panel">
+  <h2>Wang Tile Legend</h2>
+  <p>Border colors are the real Wang-tile edge colors. Adjacent borders must match.</p>
+  <div id="tileLegend" class="grid"></div>
+</div>
 
 <div class="grid-container">
   <div class="panel">
@@ -177,6 +193,47 @@ function printGrid(grid) {
   return grid.map(row => row.join(" ")).join("\n");
 }
 
+function renderTileLegend() {
+  const container = document.getElementById("tileLegend");
+  container.className = "grid";
+  container.style.gridTemplateColumns = "repeat(4, 40px)";
+  container.innerHTML = "";
+
+  for (const tileInfo of tileObjects) {
+    const cell = document.createElement("div");
+    cell.className = `cell tile-${tileInfo.name}`;
+    cell.textContent = tileInfo.name;
+    cell.title =
+      `${tileInfo.name}: ` +
+      `N=${tileInfo.north}, E=${tileInfo.east}, ` +
+      `S=${tileInfo.south}, W=${tileInfo.west}`;
+
+    cell.style.borderTopColor = tileInfo.north;
+    cell.style.borderRightColor = tileInfo.east;
+    cell.style.borderBottomColor = tileInfo.south;
+    cell.style.borderLeftColor = tileInfo.west;
+
+    container.appendChild(cell);
+  }
+}
+
+function printAllowedRules() {
+  let lines = [];
+
+  lines.push("Right-neighbor rules:");
+  for (const t of tiles) {
+    lines.push(`${t} -> ${spec.allowed.right[t].join(", ")}`);
+  }
+
+  lines.push("");
+  lines.push("Down-neighbor rules:");
+  for (const t of tiles) {
+    lines.push(`${t} -> ${spec.allowed.down[t].join(", ")}`);
+  }
+
+  return lines.join("\n");
+}
+
 function renderGrid(grid, elementId) {
   const container = document.getElementById(elementId);
 
@@ -189,7 +246,16 @@ function renderGrid(grid, elementId) {
       const cell = document.createElement("div");
 
       cell.className = `cell tile-${tile}`;
+      cell.textContent = tile;
       cell.title = tile;
+
+      const tileInfo = tileObjects.find(t => t.name === tile);
+      if (tileInfo) {
+        cell.style.borderTopColor = tileInfo.north;
+        cell.style.borderRightColor = tileInfo.east;
+        cell.style.borderBottomColor = tileInfo.south;
+        cell.style.borderLeftColor = tileInfo.west;
+      }
 
       container.appendChild(cell);
     }
@@ -512,10 +578,13 @@ renderGrid(wfcGrid, "wfcGrid");
 renderGrid(backtrackingGrid, "satGrid");
 renderGrid(decodedSatGrid, "decodedGrid");
 
+renderTileLegend();
+
 document.getElementById("summaryOutput").textContent =
   `Tiles: ${tiles.join(", ")}\n` +
   `Variables: ${cnf.numVars}\n` +
-  `Clauses: ${cnf.clauses.length}`;
+  `Clauses: ${cnf.clauses.length}\n\n` +
+  printAllowedRules();
 
 document.getElementById("dimacsOutput").textContent =
   cnf.dimacs;
